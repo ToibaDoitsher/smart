@@ -11,7 +11,7 @@ const Projects: React.FC<ProjectsProps> = ({ onOpenAudit }) => {
     <section id="projects" className="py-24 px-6 max-w-7xl mx-auto">
       <div className="text-center mb-20">
         <h2 className="text-4xl md:text-6xl font-black mb-4 tracking-tighter">הזרקת קוד למציאות</h2>
-        <p className="text-gray-500 font-mono text-sm">> פרויקטים נבחרים וכלים אינטראקטיביים</p>
+        <p className="text-gray-500 font-mono text-sm">&gt; פרויקטים נבחרים וכלים אינטראקטיביים</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
