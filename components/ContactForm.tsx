@@ -26,7 +26,7 @@ const ContactForm: React.FC = () => {
   if (status === 'success') {
     return (
       <div className="text-center p-20 glass rounded-[3rem] border-cyan-500/50 bg-[#05070f] font-mono">
-        <div className="text-cyan-500 text-6xl mb-8">&gt; DONE</div>
+        <div className="text-cyan-500 text-6xl mb-8">{" > "} DONE</div>
         <h3 className="text-3xl font-black mb-4">המערכת קיבלה את הנתונים</h3>
         <p className="text-gray-400">טויבי יחזור אליכם בהקדם.</p>
         <button onClick={() => setStatus('idle')} className="mt-10 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-cyan-400">Back to Shell</button>
@@ -50,7 +50,7 @@ const ContactForm: React.FC = () => {
       <div className="glass p-10 md:p-16 bg-[#05070f]/90 relative">
         <div className="mb-12">
           <h2 className="text-4xl font-black mb-4 text-white">בונה מערכות?</h2>
-          <p className="text-gray-500 font-mono text-sm">&gt; השאירו פרטים להזרקת קוד לאוטומציה העסקית שלכם.</p>
+          <p className="text-gray-500 font-mono text-sm">{" > "} השאירו פרטים להזרקת קוד לאוטומציה העסקית שלכם.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8 font-mono">
