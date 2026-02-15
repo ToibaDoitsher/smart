@@ -49,7 +49,7 @@
 </head>
   <body>
     <div id="root"></div>
-    <!-- This line is CRITICAL for Vercel to load your app -->
-    <script type="module" src="/index.tsx"></script>
+    <!-- Using relative path to support subpath deployments like GitHub Pages -->
+    <script type="module" src="index.tsx"></script>
   </body>
 </html>

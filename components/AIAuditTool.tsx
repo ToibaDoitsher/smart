@@ -19,55 +19,81 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
 
   const generateStrategy = async () => {
-    const apiKey = process.env.API_KEY;
+    // Safely retrieve the API key from the environment
+    const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+    
     if (!input.trim() || !apiKey) {
-      if (!apiKey) setError("מפתח ה-API חסר. נא לפנות לטויבי.");
+      if (!apiKey) {
+        setError("מפתח ה-API חסר. נא לוודא שהגדרת את API_KEY במערכת.");
+        console.error("Critical: API_KEY is missing in process.env");
+      }
       return;
     }
+
     setLoading(true);
     setError(null);
 
     try {
       const ai = new GoogleGenAI({ apiKey });
+      
+      // Using gemini-3-pro-preview for strategic reasoning tasks
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Create a professional and motivating business automation roadmap in Hebrew for: "${input}". 
-        Include ROI goals and specific tools like Make.com.`,
+        model: "gemini-3-pro-preview",
+        contents: `צור תוכנית עבודה מקצועית ומניעה לפעולה לאוטומציה עסקית ובינה מלאכותית עבור העסק הבא: "${input}". 
+        התוכנית צריכה לכלול שלבים טכניים, כלים מומלצים (כמו Make.com, סוכני AI, CRM) ופוטנציאל חיסכון בזמן וכסף.
+        התגובה חייבת להיות בעברית ובפורמט JSON בלבד.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              title: { type: Type.STRING },
+              title: { 
+                type: Type.STRING,
+                description: "כותרת התוכנית האסטרטגית"
+              },
               steps: {
                 type: Type.ARRAY,
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    tool: { type: Type.STRING }
+                    title: { type: Type.STRING, description: "שם השלב" },
+                    description: { type: Type.STRING, description: "פירוט הפעולה האוטומטית" },
+                    tool: { type: Type.STRING, description: "הכלי הטכנולוגי המרכזי" }
                   },
                   required: ["title", "description", "tool"]
                 }
               },
-              potential: { type: Type.STRING }
+              potential: { 
+                type: Type.STRING, 
+                description: "תיאור קצר של פוטנציאל ה-ROI"
+              }
             },
             required: ["title", "steps", "potential"]
           }
         }
       });
 
+      if (!response.text) {
+        throw new Error("Empty response from Gemini API");
+      }
+
       const data = JSON.parse(response.text);
       setResult(data);
     } catch (err: any) {
-      console.error("AI Audit Tool Error:", err);
+      console.error("AI Audit Tool Error Detail:", err);
+      
+      let errorMessage = "חלה שגיאה בעיבוד הנתונים. נא לנסות שוב.";
       const errStr = JSON.stringify(err).toLowerCase();
-      if (errStr.includes("418") || errStr.includes("blocked")) {
-        setError("סינון האינטרנט (NetFree) חוסם את הגישה ל-AI. יש לבקש פתיחה של generativelanguage.googleapis.com.");
-      } else {
-        setError("אופס, ה-AI שלנו לקח רגע לעצמו. נסה שוב או פנה ישירות לטויבי ב-052-7179418.");
+
+      if (errStr.includes("xhr") || errStr.includes("network") || errStr.includes("fetch")) {
+        errorMessage = "שגיאת תקשורת: לא ניתן להתחבר לשרת ה-AI. אם את/ה בנטפרי, ייתכן שצריך לבקש פתיחה של generativelanguage.googleapis.com.";
+      } else if (errStr.includes("api_key") || errStr.includes("invalid") || errStr.includes("401")) {
+        errorMessage = "שגיאת הרשאה: מפתח ה-API אינו תקין.";
+      } else if (errStr.includes("quota") || errStr.includes("429")) {
+        errorMessage = "חרגנו ממכסת השימוש החינמית. נא להמתין דקה ולנסות שוב.";
       }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -84,13 +110,13 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <span className="text-cyan-500 font-black text-[10px] uppercase tracking-[0.5em] mb-4 block">AI BUSINESS VISION</span>
           <h2 className="text-3xl font-black mb-6 text-white leading-tight">איך נוכל לשדרג אותך?</h2>
           <p className="text-gray-400 text-sm mb-8 leading-relaxed">
-            ספר לנו קצת על העסק שלך ומה היית רוצה שיקרה באופן אוטומטי. הבינה המלאכותית תבנה לך מפת דרכים ראשונית.
+            ספר לנו קצת על העסק שלך ומה היית רוצה שיקרה באופן אוטומטי. הבינה המלאכותית של טויבי תבנה לך מפת דרכים ראשונית.
           </p>
           
           <textarea 
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="תאר את החלום שלך לאוטומציה..."
+            placeholder="תאר את העסק שלך ומה החלום שלך לאוטומציה..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-white font-sans text-sm focus:border-cyan-500/50 outline-none min-h-[150px] mb-6 resize-none transition-all"
           />
 
@@ -100,19 +126,19 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             className="w-full py-5 bg-white text-black font-black rounded-2xl hover:bg-cyan-500 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
           >
             {loading ? (
-              <><i className="fa-solid fa-sparkles animate-pulse"></i> בונה את החזון שלך...</>
+              <><i className="fa-solid fa-sparkles animate-pulse"></i> בונה אסטרטגיה...</>
             ) : (
               <><span className="ml-2">צור מפת דרכים ל-AI</span><i className="fa-solid fa-bolt-lightning"></i></>
             )}
           </button>
-          {error && <p className="mt-4 text-red-400 text-xs text-center leading-relaxed font-bold">{error}</p>}
+          {error && <p className="mt-4 text-red-400 text-[11px] text-center leading-relaxed font-bold bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</p>}
         </div>
 
         <div className="w-full md:w-1/2 bg-[#05070f] p-8 md:p-12 overflow-y-auto max-h-[600px] flex flex-col justify-center">
           {!result ? (
             <div className="text-center opacity-30 py-20">
               <i className="fa-solid fa-lightbulb text-6xl mb-6 text-cyan-500"></i>
-              <p className="font-bold text-sm tracking-widest uppercase">כאן תופיע האסטרטגיה שלך</p>
+              <p className="font-bold text-sm tracking-widest uppercase">כאן תופיע האסטרטגיה המותאמת אישית</p>
             </div>
           ) : (
             <div className="animate-slideUp text-right">
@@ -122,7 +148,7 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <div className="space-y-8">
                 {result.steps.map((step, i) => (
                   <div key={i} className="relative pr-8 border-r border-cyan-500/20">
-                    <div className="absolute top-0 -right-[5px] w-2 h-2 bg-cyan-500 rounded-full"></div>
+                    <div className="absolute top-0 -right-[5px] w-2 h-2 bg-cyan-500 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.6)]"></div>
                     <h4 className="font-black text-white text-sm mb-2">{step.title}</h4>
                     <p className="text-gray-400 text-xs leading-relaxed mb-3">{step.description}</p>
                     <span className="text-[9px] bg-cyan-500/10 px-3 py-1 rounded-md text-cyan-400 border border-cyan-500/20 font-bold uppercase">
@@ -138,12 +164,12 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               </div>
 
               <div className="flex gap-4 mt-8">
-                <a href="#contact" onClick={onClose} className="flex-1 py-4 bg-white text-black font-black rounded-xl text-center text-xs hover:bg-cyan-500 transition-colors">
+                <a href="#contact" onClick={onClose} className="flex-1 py-4 bg-white text-black font-black rounded-xl text-center text-xs hover:bg-cyan-400 transition-colors">
                   בוא נגשים את זה
                 </a>
                 <button onClick={() => { setResult(null); setInput(''); }} className="flex-1 py-4 glass text-white font-black rounded-xl text-xs hover:bg-white/10">
                   ניתוח נוסף
-                </button>
+                </a>
               </div>
             </div>
           )}
