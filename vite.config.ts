@@ -11,9 +11,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    emptyOutDir: true,
   },
   define: {
-    // Only expose the specific API_KEY to the client to prevent Vercel build errors
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    // Ensuring variables are strings or empty strings to prevent build breakage
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
   }
 });
