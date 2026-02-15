@@ -19,7 +19,7 @@ const Navbar: React.FC = () => {
           <div className="w-12 h-12 flex items-center justify-center transition-transform duration-500 group-hover:scale-110">
              <img 
                src={logoUrl} 
-               alt="Toiby Doitsher Logo" 
+               alt="טויבי דויטשר - מומחית אוטומציה עסקית, פיתוח תוכנה ובינה מלאכותית" 
                className="w-full h-full object-contain filter brightness-110 contrast-125"
                onError={(e) => (e.target as HTMLImageElement).src="https://img.icons8.com/fluency/96/artificial-intelligence.png"}
              />
