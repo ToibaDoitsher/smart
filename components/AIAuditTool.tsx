@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
+import React, { useState } from 'react';
 
 interface AuditResult {
   title: string;
@@ -19,24 +19,15 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null);
 
   const generateStrategy = async () => {
-    // Safely retrieve the API key from the environment
-    const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-    
-    if (!input.trim() || !apiKey) {
-      if (!apiKey) {
-        setError("מפתח ה-API חסר. נא לוודא שהגדרת את API_KEY במערכת.");
-        console.error("Critical: API_KEY is missing in process.env");
-      }
-      return;
-    }
+    if (!input.trim()) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      // Direct initialization as per guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // Using gemini-3-pro-preview for strategic reasoning tasks
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-preview",
         contents: `צור תוכנית עבודה מקצועית ומניעה לפעולה לאוטומציה עסקית ובינה מלאכותית עבור העסק הבא: "${input}". 
@@ -73,26 +64,23 @@ const AIAuditTool: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         }
       });
 
-      if (!response.text) {
-        throw new Error("Empty response from Gemini API");
-      }
+      const text = response.text;
+      if (!text) throw new Error("לא התקבלה תשובה מהשרת");
 
-      const data = JSON.parse(response.text);
+      const data = JSON.parse(text);
       setResult(data);
     } catch (err: any) {
-      console.error("AI Audit Tool Error Detail:", err);
+      console.error("Gemini Error:", err);
       
-      let errorMessage = "חלה שגיאה בעיבוד הנתונים. נא לנסות שוב.";
-      const errStr = JSON.stringify(err).toLowerCase();
+      let errorMessage = "חלה שגיאה בתקשורת עם הבינה המלאכותית.";
+      const errStr = String(err).toLowerCase();
 
-      if (errStr.includes("xhr") || errStr.includes("network") || errStr.includes("fetch")) {
-        errorMessage = "שגיאת תקשורת: לא ניתן להתחבר לשרת ה-AI. אם את/ה בנטפרי, ייתכן שצריך לבקש פתיחה של generativelanguage.googleapis.com.";
-      } else if (errStr.includes("api_key") || errStr.includes("invalid") || errStr.includes("401")) {
-        errorMessage = "שגיאת הרשאה: מפתח ה-API אינו תקין.";
-      } else if (errStr.includes("quota") || errStr.includes("429")) {
-        errorMessage = "חרגנו ממכסת השימוש החינמית. נא להמתין דקה ולנסות שוב.";
+      if (errStr.includes("xhr") || errStr.includes("rpc") || errStr.includes("network")) {
+        errorMessage = "שגיאת תקשורת (XHR/RPC). אם את/ה משתמש/ת בנטפרי, ייתכן שצריך לבקש פתיחה של כתובות ה-API של גוגל (generativelanguage.googleapis.com).";
+      } else if (errStr.includes("api_key") || errStr.includes("invalid")) {
+        errorMessage = "מפתח ה-API אינו תקין או חסר.";
       }
-      
+
       setError(errorMessage);
     } finally {
       setLoading(false);
