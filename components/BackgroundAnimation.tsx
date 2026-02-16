@@ -1,142 +1,170 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-interface Bubble {
+interface Node {
   id: number;
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   size: number;
   text: string;
-  speed: number;
   opacity: number;
-  isPopping: boolean;
 }
 
-const BUBBLE_TEXTS = ["אוטומציה", "חיסכון $", "AI", "יעילות", "בוטים", "פיתוח", "שקט נפשי"];
+const BUBBLE_TEXTS = ["אוטומציה", "חיסכון $", "AI", "יעילות", "בוטים", "פיתוח", "CRM"];
 
 const BackgroundAnimation: React.FC<{ isTurbo?: boolean }> = ({ isTurbo }) => {
-  const [bubbles, setBubbles] = useState<Bubble[]>([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const playPopSound = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.1);
-    } catch (e) {}
-  };
-
-  const spawnBubble = useCallback(() => ({
+  const spawnNode = useCallback(() => ({
     id: Math.random(),
-    x: Math.random() * 90 + 5,
-    y: 110,
-    size: Math.random() * 60 + 40,
+    x: Math.random() * window.innerWidth,
+    y: Math.random() * window.innerHeight,
+    vx: (Math.random() - 0.5) * 1,
+    vy: (Math.random() - 0.5) * 1,
+    size: Math.random() * 40 + 20,
     text: BUBBLE_TEXTS[Math.floor(Math.random() * BUBBLE_TEXTS.length)],
-    speed: Math.random() * 0.5 + 0.2,
-    opacity: Math.random() * 0.3 + 0.1,
-    isPopping: false
+    opacity: Math.random() * 0.4 + 0.1
   }), []);
 
   useEffect(() => {
-    const initial = Array.from({ length: 5 }, spawnBubble);
-    setBubbles(initial);
+    setNodes(Array.from({ length: 15 }, spawnNode));
+
+    const handleMouseMove = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
+    const handleMouseDown = () => setIsMouseDown(true);
+    const handleMouseUp = () => {
+      setIsMouseDown(false);
+      // Explode effect on mouse up
+      setNodes(prev => prev.map(n => {
+        const dx = n.x - mousePos.x;
+        const dy = n.y - mousePos.y;
+        const dist = Math.hypot(dx, dy);
+        const force = 15;
+        return {
+          ...n,
+          vx: (dx / dist) * force,
+          vy: (dy / dist) * force
+        };
+      }));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
 
     const interval = setInterval(() => {
-      setBubbles(prev => {
-        const updated = prev.map(b => ({
-          ...b,
-          y: b.y - (isTurbo ? b.speed * 4 : b.speed),
-          opacity: b.y < 20 ? b.opacity - 0.01 : b.opacity
-        })).filter(b => b.y > -20 && b.opacity > 0);
+      setNodes(prev => prev.map(n => {
+        let { x, y, vx, vy } = n;
 
-        if (updated.length < 6) {
-          updated.push(spawnBubble());
+        if (isMouseDown) {
+          // Gravity Well effect
+          const dx = mousePos.x - x;
+          const dy = mousePos.y - y;
+          const dist = Math.hypot(dx, dy);
+          vx += (dx / dist) * 0.5;
+          vy += (dy / dist) * 0.5;
+          vx *= 0.95; // Friction
+          vy *= 0.95;
+        } else {
+          // Normal floating movement
+          vx *= 0.99;
+          vy *= 0.99;
+          if (isTurbo) { vx *= 1.05; vy *= 1.05; }
         }
-        return updated;
-      });
+
+        x += vx;
+        y += vy;
+
+        // Bounce off walls
+        if (x < 0 || x > window.innerWidth) vx *= -1;
+        if (y < 0 || y > window.innerHeight) vy *= -1;
+
+        return { ...n, x, y, vx, vy };
+      }));
     }, 16);
 
-    return () => clearInterval(interval);
-  }, [isTurbo, spawnBubble]);
-
-  const handlePop = (id: number) => {
-    setBubbles(prev => prev.map(b => b.id === id ? { ...b, isPopping: true } : b));
-    playPopSound();
-    setTimeout(() => {
-      setBubbles(prev => prev.filter(b => b.id !== id));
-    }, 300);
-  };
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      clearInterval(interval);
+    };
+  }, [isMouseDown, mousePos, isTurbo, spawnNode]);
 
   return (
-    <div className="fixed inset-0 -z-20 overflow-hidden bg-[#02040a]">
-      {/* Neural Network Glows */}
-      <div className={`absolute top-[10%] left-[5%] w-[400px] h-[400px] rounded-full blur-[100px] animate-pulse transition-colors duration-1000 ${isTurbo ? 'bg-red-600/10' : 'bg-cyan-600/10'}`}></div>
-      <div className={`absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse [animation-delay:2s] transition-colors duration-1000 ${isTurbo ? 'bg-red-900/10' : 'bg-indigo-900/10'}`}></div>
+    <div ref={containerRef} className="fixed inset-0 -z-20 overflow-hidden bg-[#02040a]">
+      {/* Background Glows */}
+      <div className={`absolute top-[10%] left-[5%] w-[400px] h-[400px] rounded-full blur-[120px] transition-colors duration-1000 ${isTurbo ? 'bg-red-600/10' : 'bg-cyan-600/10'}`}></div>
+      <div className={`absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full blur-[150px] transition-colors duration-1000 ${isTurbo ? 'bg-red-900/10' : 'bg-indigo-900/10'}`}></div>
       
-      {/* Bubbles System */}
-      {bubbles.map(bubble => (
+      {/* SVG for Connections (Circuitry) */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20">
+        {nodes.map((n, i) => {
+          return nodes.slice(i + 1).map(n2 => {
+            const dist = Math.hypot(n.x - n2.x, n.y - n2.y);
+            if (dist < 200) {
+              return (
+                <line 
+                  key={`${n.id}-${n2.id}`}
+                  x1={n.x} y1={n.y} x2={n2.x} y2={n2.y}
+                  stroke={isTurbo ? '#ef4444' : '#06b6d4'}
+                  strokeWidth={1 - dist / 200}
+                  strokeOpacity={1 - dist / 200}
+                />
+              );
+            }
+            return null;
+          });
+        })}
+      </svg>
+
+      {/* Nodes (The "Balloons") */}
+      {nodes.map(node => (
         <div 
-          key={bubble.id}
-          onMouseEnter={() => !bubble.isPopping && handlePop(bubble.id)}
-          className={`absolute flex items-center justify-center rounded-full cursor-pointer transition-all duration-300 pointer-events-auto ${bubble.isPopping ? 'scale-150 opacity-0' : 'scale-100'}`}
+          key={node.id}
+          className="absolute flex items-center justify-center rounded-full transition-transform duration-75 pointer-events-none"
           style={{ 
-            left: `${bubble.x}%`, 
-            top: `${bubble.y}%`, 
-            width: bubble.size, 
-            height: bubble.size,
+            left: node.x, 
+            top: node.y, 
+            width: node.size, 
+            height: node.size,
+            transform: `translate(-50%, -50%) scale(${isMouseDown ? 0.7 : 1})`,
             background: isTurbo ? 'rgba(239, 68, 68, 0.1)' : 'rgba(6, 182, 212, 0.1)',
-            border: `1px solid ${isTurbo ? 'rgba(239, 68, 68, 0.3)' : 'rgba(6, 182, 212, 0.3)'}`,
+            border: `1px solid ${isTurbo ? 'rgba(239, 68, 68, 0.4)' : 'rgba(6, 182, 212, 0.4)'}`,
             backdropFilter: 'blur(4px)',
-            opacity: bubble.opacity,
-            boxShadow: `0 0 20px ${isTurbo ? 'rgba(239, 68, 68, 0.2)' : 'rgba(6, 182, 212, 0.2)'}`
+            opacity: node.opacity,
+            boxShadow: `0 0 ${isMouseDown ? '40px' : '15px'} ${isTurbo ? 'rgba(239, 68, 68, 0.3)' : 'rgba(6, 182, 212, 0.3)'}`
           }}
         >
-          {bubble.isPopping ? (
-            <div className="flex gap-1">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className={`w-1 h-1 rounded-full animate-ping ${isTurbo ? 'bg-red-500' : 'bg-cyan-500'}`}></div>
-              ))}
-            </div>
-          ) : (
-            <span className="text-[10px] font-black uppercase text-center text-white/60 tracking-tighter select-none">{bubble.text}</span>
-          )}
+          <span className="text-[8px] font-black uppercase text-center text-white/60 tracking-tighter select-none px-2">{node.text}</span>
         </div>
       ))}
 
-      {/* Tech Grid Overlay */}
+      {/* The Gravity Well Visualizer */}
+      {isMouseDown && (
+        <div 
+          className="absolute w-40 h-40 rounded-full border border-white/10 animate-ping pointer-events-none"
+          style={{ left: mousePos.x, top: mousePos.y, transform: 'translate(-50%, -50%)' }}
+        ></div>
+      )}
+
+      {/* Lens Effect (The Matrix Underworld) */}
       <div 
-        className="absolute inset-0 opacity-[0.02] pointer-events-none"
-        style={{
-          backgroundImage: `radial-gradient(circle, #fff 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
+        className="absolute w-64 h-64 rounded-full pointer-events-none z-30 opacity-40 border border-white/5"
+        style={{ 
+          left: mousePos.x, top: mousePos.y, transform: 'translate(-50%, -50%)',
+          background: 'radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 70%)',
+          backdropFilter: 'contrast(1.5) brightness(1.2)'
         }}
-      ></div>
-
-      {/* Floating Code Blobs */}
-      <div className={`absolute inset-0 pointer-events-none opacity-[0.05] font-mono text-[9px] select-none transition-colors ${isTurbo ? 'text-red-500' : 'text-cyan-500'}`}>
-        <div className="absolute top-[15%] left-[5%] animate-float">01011001 01010100</div>
-        <div className="absolute top-[40%] right-[10%] animate-float [animation-delay:3s]">AI_AGENT_STATUS: ACTIVE</div>
-        <div className="absolute bottom-[30%] left-[20%] animate-float [animation-delay:5s]">WEB_HOOK_LISTEN: 8080</div>
-        <div className="absolute bottom-[10%] right-[30%] animate-float [animation-delay:1s]">ROI_OPTIMIZATION_IN_PROGRESS</div>
+      >
+        <div className="absolute inset-0 flex items-center justify-center text-[6px] font-mono text-cyan-400 overflow-hidden opacity-50 select-none">
+          {`010111010101011010101010101010110101010101011101010101101010101010101011010101010101110101010110101010101010101101010101`}
+        </div>
       </div>
-
-      <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0) rotate(0deg); }
-          50% { transform: translateY(-30px) rotate(5deg); }
-        }
-        .animate-float {
-          animation: float 12s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 };

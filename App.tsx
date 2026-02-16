@@ -16,6 +16,7 @@ import AIAuditTool from './components/AIAuditTool';
 const CustomCursor: React.FC = () => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isPointer, setIsPointer] = useState(false);
+  const [isClicking, setIsClicking] = useState(false);
   const [trail, setTrail] = useState<{x: number, y: number, id: number}[]>([]);
 
   useEffect(() => {
@@ -26,8 +27,18 @@ const CustomCursor: React.FC = () => {
       const target = e.target as HTMLElement;
       setIsPointer(window.getComputedStyle(target).cursor === 'pointer');
     };
+    const handleMouseDown = () => setIsClicking(true);
+    const handleMouseUp = () => setIsClicking(false);
+
     window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
   }, []);
 
   return (
@@ -43,8 +54,8 @@ const CustomCursor: React.FC = () => {
         ></div>
       ))}
       <div 
-        className="fixed top-0 left-0 w-8 h-8 border border-cyan-500/30 rounded-full pointer-events-none z-[9999] transition-transform duration-150 ease-out hidden md:block"
-        style={{ transform: `translate(${position.x - 16}px, ${position.y - 16}px) scale(${isPointer ? 1.5 : 1})` }}
+        className="fixed top-0 left-0 w-8 h-8 border border-cyan-500/30 rounded-full pointer-events-none z-[9999] transition-all duration-150 ease-out hidden md:block"
+        style={{ transform: `translate(${position.x - 16}px, ${position.y - 16}px) scale(${isClicking ? 0.8 : (isPointer ? 1.5 : 1)})` }}
       ></div>
       <div 
         className="fixed top-0 left-0 w-1 h-1 bg-cyan-400 rounded-full pointer-events-none z-[9999] hidden md:block"
@@ -58,6 +69,7 @@ const App: React.FC = () => {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isTurbo, setIsTurbo] = useState(false);
+  const [isClicking, setIsClicking] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -66,7 +78,12 @@ const App: React.FC = () => {
       setScrollProgress(progress);
     };
 
+    const handleMouseDown = () => setIsClicking(true);
+    const handleMouseUp = () => setIsClicking(false);
+
     window.addEventListener('scroll', handleScroll);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
 
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -80,12 +97,14 @@ const App: React.FC = () => {
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
       observer.disconnect();
     };
   }, []);
 
   return (
-    <div className={`relative min-h-screen text-white selection:bg-cyan-500/40 overflow-x-hidden bg-[#02040a] cursor-none transition-colors duration-700 ${isTurbo ? 'turbo-mode' : ''}`}>
+    <div className={`relative min-h-screen text-white selection:bg-cyan-500/40 overflow-x-hidden bg-[#02040a] cursor-none transition-all duration-700 ${isTurbo ? 'turbo-mode' : ''}`}>
       <CustomCursor />
       
       {isAuditOpen && <AIAuditTool onClose={() => setIsAuditOpen(false)} />}
@@ -98,7 +117,7 @@ const App: React.FC = () => {
       <BackgroundAnimation isTurbo={isTurbo} />
       <Navbar onTurboToggle={() => setIsTurbo(!isTurbo)} isTurbo={isTurbo} />
       
-      <main className={isTurbo ? 'animate-vibrate-subtle' : ''}>
+      <main className={`transition-transform duration-500 ${isClicking ? 'scale-[0.99]' : 'scale-100'} ${isTurbo ? 'animate-vibrate-subtle' : ''}`}>
         <Hero isTurbo={isTurbo} />
         
         <div className="reveal">
