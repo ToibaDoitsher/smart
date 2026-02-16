@@ -1,14 +1,22 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
+type GearType = 'solid' | 'spoked' | 'hollow' | 'cross' | 'complex';
+
 interface Node {
   id: string;
   x: number;
   y: number;
+  z: number;
   vx: number;
   vy: number;
   size: number;
-  energy: number;
+  rotation: number;
+  rotationSpeed: number;
+  overdrive: number;
+  type: GearType;
+  color: string;
+  isInitializing: number;
 }
 
 interface Particle {
@@ -19,96 +27,127 @@ interface Particle {
   vy: number;
   life: number;
   color: string;
+  size: number;
 }
 
-interface Pulse {
-  id: string;
-  fromId: string;
-  toId: string;
-  progress: number;
-}
+const COLOR_PALETTE = ['#00f2ff', '#ffcc00', '#ff00ff', '#00ff99', '#ffffff'];
+const CONNECTION_DIST = 180;
+const MOUSE_ATTRACTION_DIST = 150; 
+const ATTRACTION_FORCE = 0.0006; 
+const ACTIVE_FRICTION = 0.98;
+const SETTLE_FRICTION = 0.92; // Higher friction to make them stop when mouse leaves
+const BASE_ROTATION_SPEED_LIMIT = 0.8; 
+
+const GearIcon: React.FC<{ node: Node }> = ({ node }) => {
+  const { size, color, rotation, overdrive, type, isInitializing, z } = node;
+  const teeth = type === 'complex' ? 12 : 8;
+  const innerRadius = size * 0.3;
+  const outerRadius = size * 0.5;
+  const toothWidth = size * 0.25;
+  
+  const baseOpacity = z === 0 ? 0.2 : z === 2 ? 0.6 : 0.8;
+  const displayColor = overdrive > 0.5 ? '#ffffff' : color;
+  const blur = z === 0 ? 'blur(2px)' : 'none';
+
+  return (
+    <svg 
+      width={size * 2.5} 
+      height={size * 2.5} 
+      viewBox={`0 0 ${size * 2.5} ${size * 2.5}`} 
+      style={{ 
+        transform: `rotate(${rotation}deg) scale(${1 + overdrive * 0.15})`, 
+        transition: 'transform 0.05s linear',
+        filter: `${blur} drop-shadow(0 0 ${overdrive * 12}px ${color})`,
+        opacity: isInitializing < 1 ? isInitializing : baseOpacity
+      }}
+    >
+      <defs>
+        <linearGradient id={`grad-${node.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={displayColor} stopOpacity={1} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.4} />
+        </linearGradient>
+      </defs>
+      <g transform={`translate(${size * 1.25}, ${size * 1.25})`}>
+        <circle r={innerRadius * 1.2} fill="none" stroke={displayColor} strokeWidth={isInitializing < 1 ? 1 : 2} strokeDasharray={isInitializing < 1 ? "2,2" : "none"} />
+        
+        {type === 'spoked' && (
+          <g>
+            {[0, 120, 240].map(deg => (
+              <rect key={deg} x="-1" y={-innerRadius * 1.3} width="2" height={innerRadius * 1.3} fill={displayColor} transform={`rotate(${deg})`} />
+            ))}
+          </g>
+        )}
+        
+        {type === 'complex' && (
+          <circle r={innerRadius * 0.6} fill="none" stroke={displayColor} strokeWidth="1" />
+        )}
+
+        {Array.from({ length: teeth }).map((_, i) => (
+          <path
+            key={i}
+            d={`M -${toothWidth / 2} -${outerRadius} L ${toothWidth / 2} -${outerRadius} L ${toothWidth / 4} -${innerRadius} L -${toothWidth / 4} -${innerRadius} Z`}
+            fill={isInitializing < 1 ? 'none' : `url(#grad-${node.id})`}
+            stroke={displayColor}
+            strokeWidth={1}
+            transform={`rotate(${(i * 360) / teeth})`}
+          />
+        ))}
+      </g>
+    </svg>
+  );
+};
 
 const BackgroundAnimation: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
-  const [pulses, setPulses] = useState<Pulse[]>([]);
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const requestRef = useRef<number>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Sound synthesis functions
-  const playSound = (type: 'add' | 'pop') => {
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      const ctx = audioCtxRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      if (type === 'add') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.05, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-      } else {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(150, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-      }
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + (type === 'add' ? 0.1 : 0.2));
-    } catch (e) {}
-  };
+  useEffect(() => {
+    setNodes([]);
+  }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     setMousePos({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const explodeNode = (nodeId: string, currentNodes: Node[], chain: boolean = true) => {
+  const explodeNode = useCallback((nodeId: string, currentNodes: Node[], alreadyExploded: Set<string> = new Set()) => {
+    if (alreadyExploded.has(nodeId)) return;
+    alreadyExploded.add(nodeId);
+
     const node = currentNodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    playSound('pop');
-
-    // Create explosion particles
-    const newParticles: Particle[] = Array.from({ length: 20 }).map((_, i) => ({
-      id: `p-${Date.now()}-${nodeId}-${i}`,
+    const newParticles: Particle[] = Array.from({ length: 15 }).map((_, i) => ({
+      id: `p-${Date.now()}-${nodeId}-${i}-${Math.random()}`,
       x: node.x,
       y: node.y,
-      vx: (Math.random() - 0.5) * 15,
-      vy: (Math.random() - 0.5) * 15,
+      vx: (Math.random() - 0.5) * 10,
+      vy: (Math.random() - 0.5) * 10,
       life: 1.0,
-      color: '#00f2ff'
+      color: node.color,
+      size: 2 + Math.random() * 4
     }));
 
     setParticles(prev => [...prev, ...newParticles]);
 
-    if (chain) {
-      // Find connected neighbors and trigger them with a small delay
-      const neighbors = currentNodes.filter(n => 
-        n.id !== nodeId && Math.hypot(n.x - node.x, n.y - node.y) < 200
-      );
-      
-      neighbors.forEach((neighbor, i) => {
-        setTimeout(() => {
-          setNodes(prev => {
-            if (prev.find(n => n.id === neighbor.id)) {
-              explodeNode(neighbor.id, prev, false); // Only 1 level deep or distance based
-              return prev.filter(n => n.id !== neighbor.id);
-            }
-            return prev;
-          });
-        }, 100 + i * 50);
-      });
-    }
-  };
+    const neighbors = currentNodes.filter(other => {
+      if (other.id === nodeId || alreadyExploded.has(other.id)) return false;
+      const d = Math.hypot(node.x - other.x, node.y - other.y);
+      return d < CONNECTION_DIST;
+    });
+
+    setNodes(prev => prev.filter(n => n.id !== nodeId));
+
+    neighbors.forEach((neighbor, idx) => {
+      setTimeout(() => {
+        setNodes(latestNodes => {
+          explodeNode(neighbor.id, latestNodes, alreadyExploded);
+          return latestNodes;
+        });
+      }, 60 + idx * 30);
+    });
+  }, []);
 
   const handleGlobalClick = useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -120,81 +159,126 @@ const BackgroundAnimation: React.FC = () => {
     let hitNodeId: string | null = null;
     nodes.forEach(node => {
       const dist = Math.hypot(x - node.x, y - node.y);
-      if (dist < 30) hitNodeId = node.id;
+      if (dist < node.size * 1.5) {
+        hitNodeId = node.id;
+      }
     });
 
     if (hitNodeId) {
       explodeNode(hitNodeId, nodes);
-      setNodes(prev => prev.filter(n => n.id !== hitNodeId));
       return;
     }
 
-    // Add new node
-    playSound('add');
+    const types: GearType[] = ['solid', 'spoked', 'hollow', 'cross', 'complex'];
     const newNode: Node = {
-      id: `node-${Date.now()}`,
-      x: x,
-      y: y,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      size: 10,
-      energy: 1.0
+      id: `node-${Date.now()}-${Math.random()}`,
+      x, y,
+      z: 1,
+      vx: 0,
+      vy: 0,
+      size: 20 + Math.random() * 30,
+      rotation: Math.random() * 360,
+      rotationSpeed: (Math.random() - 0.5) * BASE_ROTATION_SPEED_LIMIT,
+      overdrive: 0,
+      type: types[Math.floor(Math.random() * types.length)],
+      color: COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)],
+      isInitializing: 0
     };
     setNodes(prev => [...prev, newNode]);
-  }, [nodes]);
+  }, [nodes, explodeNode]);
 
   const animate = useCallback(() => {
     setNodes(prevNodes => {
-      return prevNodes.map(node => {
-        let nx = node.x + node.vx;
-        let ny = node.y + node.vy;
+      const updated = prevNodes.map(node => {
+        let nvx = node.vx;
+        let nvy = node.vy;
 
-        if (nx < 0 || nx > window.innerWidth) node.vx *= -1;
-        if (ny < 0 || ny > window.innerHeight) node.vy *= -1;
+        const dx = mousePos.x - node.x;
+        const dy = mousePos.y - node.y;
+        const distToMouse = Math.hypot(dx, dy);
 
-        const distToMouse = Math.hypot(mousePos.x - nx, mousePos.y - ny);
-        if (distToMouse < 250) {
-          nx += (mousePos.x - nx) * 0.02;
-          ny += (mousePos.y - ny) * 0.02;
-          node.energy = Math.min(node.energy + 0.05, 2.0);
+        // Magnetic pull only when very close
+        if (distToMouse < MOUSE_ATTRACTION_DIST) {
+          nvx += dx * ATTRACTION_FORCE;
+          nvy += dy * ATTRACTION_FORCE;
+          nvx *= ACTIVE_FRICTION;
+          nvy *= ACTIVE_FRICTION;
         } else {
-          node.energy = Math.max(node.energy - 0.01, 1.0);
+          // Shed momentum quickly so it stays in place
+          nvx *= SETTLE_FRICTION;
+          nvy *= SETTLE_FRICTION;
+          
+          // Tiny drift so they don't look completely frozen
+          nvx += (Math.random() - 0.5) * 0.005;
+          nvy += (Math.random() - 0.5) * 0.005;
         }
 
-        return { ...node, x: nx, y: ny };
+        let nx = node.x + nvx;
+        let ny = node.y + nvy;
+
+        // Bouncing logic (if they ever hit the edge)
+        if (nx < 0 || nx > window.innerWidth) {
+            nvx *= -1;
+            nx = node.x + nvx;
+        }
+        if (ny < 0 || ny > window.innerHeight) {
+            nvy *= -1;
+            ny = node.y + nvy;
+        }
+
+        let spinMod = 1;
+        if (distToMouse < 100) {
+          spinMod = 1.8; 
+          node.overdrive = Math.min(node.overdrive + 0.05, 1);
+        } else {
+          node.overdrive = Math.max(node.overdrive - 0.015, 0);
+        }
+
+        const isInitializing = Math.min(node.isInitializing + 0.04, 1);
+
+        return { 
+          ...node, 
+          x: nx, 
+          y: ny,
+          vx: nvx,
+          vy: nvy,
+          rotation: node.rotation + (node.rotationSpeed * spinMod),
+          isInitializing
+        };
       });
-    });
 
-    setParticles(prev => 
-      prev
-        .map(p => ({ ...p, x: p.x + p.vx, y: p.y + p.vy, life: p.life - 0.02 }))
-        .filter(p => p.life > 0)
-    );
-
-    setPulses(prev => {
-      const nextPulses = prev
-        .map(p => ({ ...p, progress: p.progress + 0.03 }))
-        .filter(p => p.progress < 1);
-      
-      if (Math.random() < 0.03 && nodes.length > 1) {
-        const from = nodes[Math.floor(Math.random() * nodes.length)];
-        const neighbors = nodes.filter(n => n.id !== from.id && Math.hypot(n.x - from.x, n.y - from.y) < 250);
-        if (neighbors.length > 0) {
-          const to = neighbors[Math.floor(Math.random() * neighbors.length)];
-          nextPulses.push({ id: `p-${Date.now()}`, fromId: from.id, toId: to.id, progress: 0 });
+      // Meshing torque synchronization
+      for (let i = 0; i < updated.length; i++) {
+        for (let j = i + 1; j < updated.length; j++) {
+          const a = updated[i];
+          const b = updated[j];
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          const meshDist = (a.size + b.size) * 0.7;
+          if (d < meshDist) {
+            const avgSpeed = (Math.abs(a.rotationSpeed) + Math.abs(b.rotationSpeed)) / 2;
+            updated[i].rotationSpeed = a.rotationSpeed > 0 ? avgSpeed : -avgSpeed;
+            updated[j].rotationSpeed = a.rotationSpeed > 0 ? -avgSpeed : avgSpeed;
+          }
         }
       }
-      return nextPulses;
+
+      return updated;
     });
 
+    setParticles(prev => prev.map(p => ({
+      ...p,
+      x: p.x + p.vx,
+      y: p.y + p.vy,
+      life: p.life - 0.02
+    })).filter(p => p.life > 0));
+
     requestRef.current = requestAnimationFrame(animate);
-  }, [mousePos, nodes.length]);
+  }, [mousePos]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mousedown', handleGlobalClick);
     requestRef.current = requestAnimationFrame(animate);
-    
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleGlobalClick);
@@ -204,80 +288,67 @@ const BackgroundAnimation: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden bg-[#02040a] pointer-events-none">
-      {/* Mouse Aura */}
-      <div 
-        className="absolute w-[800px] h-[800px] rounded-full opacity-5 pointer-events-none transition-transform duration-150 ease-out"
-        style={{ 
-          left: mousePos.x, 
-          top: mousePos.y, 
-          transform: 'translate(-50%, -50%)',
-          background: 'radial-gradient(circle, #00f2ff 0%, transparent 70%)'
-        }}
+      <div className="absolute inset-0 opacity-[0.03]" 
+           style={{ 
+             backgroundImage: 'radial-gradient(circle at 1px 1px, #00f2ff 1px, transparent 0)',
+             backgroundSize: '60px 60px'
+           }} 
       />
 
-      {/* SVG Canvas for lines and pulses */}
-      <svg className="absolute inset-0 w-full h-full">
+      <svg className="absolute inset-0 w-full h-full pointer-events-none">
         {nodes.map((node, i) => (
           nodes.slice(i + 1).map(target => {
-            const dist = Math.hypot(node.x - target.x, node.y - target.y);
-            if (dist < 250) {
+            const d = Math.hypot(node.x - target.x, node.y - target.y);
+            if (d < CONNECTION_DIST) {
+              const opacity = (1 - d / CONNECTION_DIST) * 0.4;
               return (
-                <line 
-                  key={`${node.id}-${target.id}`}
-                  x1={node.x} y1={node.y} x2={target.x} y2={target.y} 
-                  stroke="#00f2ff" 
-                  strokeWidth={0.5 + (1 - dist / 250) * 1.5}
-                  strokeOpacity={(1 - dist / 250) * 0.3} 
-                />
+                <g key={`${node.id}-${target.id}`}>
+                  <line 
+                    x1={node.x} y1={node.y} x2={target.x} y2={target.y} 
+                    stroke={node.color} strokeWidth="1" 
+                    strokeOpacity={opacity}
+                    strokeDasharray="4,2"
+                  />
+                  <line 
+                    x1={node.x} y1={node.y} x2={target.x} y2={target.y} 
+                    stroke="#ffffff" strokeWidth="0.5" 
+                    strokeOpacity={opacity * 0.5}
+                  />
+                </g>
               );
             }
             return null;
           })
         ))}
-        {pulses.map(pulse => {
-          const from = nodes.find(n => n.id === pulse.fromId);
-          const to = nodes.find(n => n.id === pulse.toId);
-          if (!from || !to) return null;
-          const px = from.x + (to.x - from.x) * pulse.progress;
-          const py = from.y + (to.y - from.y) * pulse.progress;
-          return (
-            <circle key={pulse.id} cx={px} cy={py} r="3" fill="#00f2ff" style={{ filter: 'drop-shadow(0 0 8px #00f2ff)' }} />
-          );
-        })}
       </svg>
 
-      {/* Nodes */}
-      {nodes.map(node => (
-        <div 
-          key={node.id}
-          className="absolute rounded-full transition-transform duration-300"
-          style={{ 
-            left: node.x, 
-            top: node.y, 
-            width: node.size * node.energy, 
-            height: node.size * node.energy,
-            background: '#ffffff',
-            boxShadow: `0 0 ${10 * node.energy}px #00f2ff, 0 0 ${20 * node.energy}px #00f2ff`,
-            transform: `translate(-50%, -50%) scale(${node.energy})`,
-            border: '2px solid #00f2ff',
-            pointerEvents: 'auto',
-            cursor: 'pointer'
-          }}
-        />
-      ))}
+      <div className="absolute inset-0">
+        {nodes.map(node => (
+          <div 
+            key={node.id}
+            className="absolute"
+            style={{ 
+              left: node.x, 
+              top: node.y, 
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
+              pointerEvents: 'none'
+            }}
+          >
+            <GearIcon node={node} />
+          </div>
+        ))}
+      </div>
 
-      {/* Explosion Particles */}
       {particles.map(p => (
         <div 
           key={p.id}
-          className="absolute rounded-full"
+          className="absolute rounded-full shadow-[0_0_10px_currentColor]"
           style={{
-            left: p.x,
-            top: p.y,
-            width: 4,
-            height: 4,
-            background: p.color,
-            boxShadow: `0 0 10px ${p.color}`,
+            left: p.x, top: p.y,
+            width: p.size, height: p.size,
+            backgroundColor: p.color,
+            color: p.color,
             opacity: p.life,
             transform: 'translate(-50%, -50%)'
           }}
