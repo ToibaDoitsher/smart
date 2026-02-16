@@ -4,12 +4,32 @@ import React, { useState } from 'react';
 const ContactForm: React.FC = () => {
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
 
+  const playContactSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(400, audioCtx.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+      
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.2);
+    } catch (e) {}
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setStatus('sending');
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
-
     try {
       const response = await fetch(`https://formspree.io/f/maqdqavz`, {
         method: 'POST',
@@ -18,14 +38,12 @@ const ContactForm: React.FC = () => {
       });
       if (response.ok) setStatus('success');
       else setStatus('error');
-    } catch (err) {
-      setStatus('error');
-    }
+    } catch (err) { setStatus('error'); }
   };
 
   if (status === 'success') {
     return (
-      <div className="text-center p-20 glass rounded-[3rem] border-cyan-500/50 bg-[#05070f] font-mono">
+      <div className="text-center p-20 glass rounded-[3rem] border-cyan-500/50 bg-[#05070f] font-mono reveal">
         <div className="text-cyan-500 text-6xl mb-8">{" > "} DONE</div>
         <h3 className="text-3xl font-black mb-4">המערכת קיבלה את הנתונים</h3>
         <p className="text-gray-400">טויבי יחזור אליכם בהקדם.</p>
@@ -35,8 +53,10 @@ const ContactForm: React.FC = () => {
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto rounded-[2rem] overflow-hidden border border-white/10 shadow-2xl">
-      {/* Terminal Header */}
+    <div 
+      onMouseEnter={playContactSound}
+      className="w-full max-w-5xl mx-auto rounded-[2rem] overflow-hidden border border-white/10 shadow-2xl transition-transform duration-500 hover:-translate-y-4 hover:shadow-cyan-500/20 hover:shadow-2xl reveal"
+    >
       <div className="bg-slate-800/80 p-4 flex items-center justify-between border-b border-white/5">
         <div className="flex gap-2">
           <div className="w-3 h-3 rounded-full bg-red-500"></div>
